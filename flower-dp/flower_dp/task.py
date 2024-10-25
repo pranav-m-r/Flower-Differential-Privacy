@@ -63,24 +63,20 @@ def load_data(partition_id: int, num_partitions: int):
     return trainloader, testloader
 
 
-def train(net, trainloader, epochs, device):
+def train(net, trainloader, privacy_engine, optimizer, target_delta, epochs, device):
     """Train the model on the training set."""
     net.to(device)  # move model to GPU if available
     criterion = torch.nn.CrossEntropyLoss().to(device)
-    optimizer = torch.optim.Adam(net.parameters(), lr=0.01)
     net.train()
-    running_loss = 0.0
     for _ in range(epochs):
         for batch in trainloader:
             images = batch["img"]
             labels = batch["label"]
             optimizer.zero_grad()
-            loss = criterion(net(images.to(device)), labels.to(device))
-            loss.backward()
+            criterion(net(images.to(device)), labels.to(device)).backward()
             optimizer.step()
-            running_loss += loss.item()
 
-    avg_trainloss = running_loss / len(trainloader)
+    avg_trainloss = privacy_engine.get_epsilon(delta=target_delta)
     return avg_trainloss
 
 
