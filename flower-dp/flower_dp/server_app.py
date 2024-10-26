@@ -17,7 +17,7 @@ def weighted_average(metrics: List[Tuple[int, Metrics]]) -> Metrics:
 def server_fn(context: Context):
     # Read from config
     num_rounds = context.run_config["num-server-rounds"]
-    # fraction_fit = context.run_config["fraction-fit"]
+    fraction_fit = context.run_config["fraction-fit"]
 
     # Initialize model parameters
     ndarrays = get_weights(Net())

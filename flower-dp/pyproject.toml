@@ -26,9 +26,9 @@ serverapp = "flower_dp.server_app:app"
 clientapp = "flower_dp.client_app:app"
 
 [tool.flwr.app.config]
-num-server-rounds = 3
+num-server-rounds = 10
 fraction-fit = 0.5
-local-epochs = 1
+local-epochs = 2
 target-delta = 1e-5
 max-grad-norm = 1.0
 
@@ -36,4 +36,4 @@ max-grad-norm = 1.0
 default = "local-simulation"
 
 [tool.flwr.federations.local-simulation]
-options.num-supernodes = 2
+options.num-supernodes = 10

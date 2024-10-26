@@ -28,7 +28,7 @@ class FlowerClient(NumPyClient):
         self.target_delta = target_delta
         self.noise_multiplier = noise_multiplier
         self.max_grad_norm = max_grad_norm
-        self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
     def fit(self, parameters, config):
@@ -37,11 +37,7 @@ class FlowerClient(NumPyClient):
         optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
         privacy_engine = PrivacyEngine(secure_mode=False)
-        (
-            model,
-            optimizer,
-            self.trainloader,
-        ) = privacy_engine.make_private(
+        (model, optimizer, self.trainloader) = privacy_engine.make_private(
             module=model,
             optimizer=optimizer,
             data_loader=self.trainloader,
@@ -49,7 +45,7 @@ class FlowerClient(NumPyClient):
             max_grad_norm=self.max_grad_norm,
         )
 
-        epsilon = train(
+        (loss, epsilon) = train(
             model,
             self.trainloader,
             privacy_engine,
@@ -59,17 +55,14 @@ class FlowerClient(NumPyClient):
             self.device,
         )
 
-        if epsilon is not None:
-            print(f"Epsilon value for delta={self.target_delta} is {epsilon:.2f}")
-        else:
-            print("Epsilon value not available.")
+        print(f"|| Average training loss: {loss:.5f} || Epsilon: {epsilon:.5f} ||")
 
-        return (get_weights(model), len(self.train_loader.dataset), {})
+        return (get_weights(model), len(self.trainloader.dataset), {})
 
     def evaluate(self, parameters, config):
         set_weights(self.model, parameters)
         loss, accuracy = test(self.model, self.valloader, self.device)
-        return loss, len(self.valloader.dataset), {"accuracy": accuracy}
+        return (loss, len(self.valloader.dataset), {"accuracy": accuracy})
 
 
 def client_fn(context: Context):
@@ -96,6 +89,4 @@ def client_fn(context: Context):
 
 
 # Flower ClientApp
-app = ClientApp(
-    client_fn,
-)
+app = ClientApp(client_fn)

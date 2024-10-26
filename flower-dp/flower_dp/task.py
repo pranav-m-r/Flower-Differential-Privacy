@@ -13,7 +13,6 @@ from torchvision.transforms import Compose, Normalize, ToTensor
 
 class Net(nn.Module):
     """Model (simple CNN adapted from 'PyTorch: A 60 Minute Blitz')"""
-
     def __init__(self):
         super(Net, self).__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
@@ -45,6 +44,7 @@ def load_data(partition_id: int, num_partitions: int):
             dataset="uoft-cs/cifar10",
             partitioners={"train": partitioner},
         )
+
     partition = fds.load_partition(partition_id)
     # Divide data on each node: 80% train, 20% test
     partition_train_test = partition.train_test_split(test_size=0.2, seed=42)
@@ -60,6 +60,7 @@ def load_data(partition_id: int, num_partitions: int):
     partition_train_test = partition_train_test.with_transform(apply_transforms)
     trainloader = DataLoader(partition_train_test["train"], batch_size=32, shuffle=True)
     testloader = DataLoader(partition_train_test["test"], batch_size=32)
+
     return trainloader, testloader
 
 
@@ -68,16 +69,22 @@ def train(net, trainloader, privacy_engine, optimizer, target_delta, epochs, dev
     net.to(device)  # move model to GPU if available
     criterion = torch.nn.CrossEntropyLoss().to(device)
     net.train()
+    running_loss = 0.0
+
     for _ in range(epochs):
         for batch in trainloader:
             images = batch["img"]
             labels = batch["label"]
             optimizer.zero_grad()
-            criterion(net(images.to(device)), labels.to(device)).backward()
+            loss = criterion(net(images.to(device)), labels.to(device))
+            loss.backward()
             optimizer.step()
+            running_loss += loss.item()
 
-    avg_trainloss = privacy_engine.get_epsilon(delta=target_delta)
-    return avg_trainloss
+    avg_trainloss = running_loss / len(trainloader)
+    epsilon = privacy_engine.get_epsilon(delta=target_delta)
+
+    return avg_trainloss, epsilon
 
 
 def test(net, testloader, device):
@@ -85,6 +92,7 @@ def test(net, testloader, device):
     net.to(device)
     criterion = torch.nn.CrossEntropyLoss()
     correct, loss = 0, 0.0
+
     with torch.no_grad():
         for batch in testloader:
             images = batch["img"].to(device)
@@ -92,8 +100,9 @@ def test(net, testloader, device):
             outputs = net(images)
             loss += criterion(outputs, labels).item()
             correct += (torch.max(outputs.data, 1)[1] == labels).sum().item()
+
     accuracy = correct / len(testloader.dataset)
-    loss = loss / len(testloader)
+
     return loss, accuracy
 
 
