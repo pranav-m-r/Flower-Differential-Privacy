@@ -13,6 +13,7 @@ from torchvision.transforms import Compose, Normalize, ToTensor
 
 class Net(nn.Module):
     """Model (simple CNN adapted from 'PyTorch: A 60 Minute Blitz')"""
+
     def __init__(self):
         super(Net, self).__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
@@ -82,9 +83,12 @@ def train(net, trainloader, privacy_engine, optimizer, target_delta, epochs, dev
             running_loss += loss.item()
 
     avg_trainloss = running_loss / len(trainloader)
-    epsilon = privacy_engine.get_epsilon(delta=target_delta)
 
-    return avg_trainloss, epsilon
+    if privacy_engine != None:
+        epsilon = privacy_engine.get_epsilon(delta=target_delta)
+        return avg_trainloss, epsilon
+    else:
+        return avg_trainloss
 
 
 def test(net, testloader, device):

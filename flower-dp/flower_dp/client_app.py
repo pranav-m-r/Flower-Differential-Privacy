@@ -8,9 +8,11 @@ from flower_dp.task import Net, get_weights, load_data, set_weights, test, train
 
 from opacus import PrivacyEngine
 
+from flower_dp.server_app import use_dp, global_run
 
-# Define Flower Client and client_fn
-class FlowerClient(NumPyClient):
+
+# Define Flower Client with DP
+class FlowerClientDP(NumPyClient):
     def __init__(
         self,
         model,
@@ -20,6 +22,7 @@ class FlowerClient(NumPyClient):
         target_delta,
         noise_multiplier,
         max_grad_norm,
+        client_id,
     ):
         self.model = model
         self.trainloader = trainloader
@@ -28,6 +31,7 @@ class FlowerClient(NumPyClient):
         self.target_delta = target_delta
         self.noise_multiplier = noise_multiplier
         self.max_grad_norm = max_grad_norm
+        self.client_id = client_id
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
 
@@ -55,14 +59,65 @@ class FlowerClient(NumPyClient):
             self.device,
         )
 
-        print(f"|| Average training loss: {loss:.5f} || Epsilon: {epsilon:.5f} ||")
-
-        return (get_weights(model), len(self.trainloader.dataset), {})
+        global_run.log({str(self.client_id): {"train_loss": loss}})
+        global_run.log({"full_epsilon": epsilon})
+        return (
+            get_weights(model),
+            len(self.trainloader.dataset),
+            {"epsilon": epsilon, "train_loss": loss},
+        )
 
     def evaluate(self, parameters, config):
         set_weights(self.model, parameters)
         loss, accuracy = test(self.model, self.valloader, self.device)
-        return (loss, len(self.valloader.dataset), {"accuracy": accuracy})
+
+        global_run.log({str(self.client_id): {"accuracy": accuracy, "test_loss": loss}})
+        return (
+            loss,
+            len(self.valloader.dataset),
+            {"accuracy": accuracy, "test_loss": loss},
+        )
+
+
+# Define Flower Client without DP
+class FlowerClientNoDP(NumPyClient):
+    def __init__(self, model, trainloader, valloader, local_epochs, client_id):
+        self.model = model
+        self.trainloader = trainloader
+        self.valloader = valloader
+        self.local_epochs = local_epochs
+        self.client_id = client_id
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
+
+    def fit(self, parameters, config):
+        model = self.model
+        set_weights(self.model, parameters)
+        optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+
+        loss = train(
+            model,
+            self.trainloader,
+            None,
+            optimizer,
+            None,
+            self.local_epochs,
+            self.device,
+        )
+
+        global_run.log({str(self.client_id): {"train_loss": loss}})
+        return (get_weights(model), len(self.trainloader.dataset), {"train_loss": loss})
+
+    def evaluate(self, parameters, config):
+        set_weights(self.model, parameters)
+        loss, accuracy = test(self.model, self.valloader, self.device)
+
+        global_run.log({str(self.client_id): {"accuracy": accuracy, "test_loss": loss}})
+        return (
+            loss,
+            len(self.valloader.dataset),
+            {"accuracy": accuracy, "test_loss": loss},
+        )
 
 
 def client_fn(context: Context):
@@ -76,16 +131,23 @@ def client_fn(context: Context):
     trainloader, valloader = load_data(partition_id, num_partitions)
     local_epochs = context.run_config["local-epochs"]
 
-    # Return Client instance
-    return FlowerClient(
-        model,
-        trainloader,
-        valloader,
-        local_epochs,
-        context.run_config["target-delta"],
-        noise_multiplier,
-        context.run_config["max-grad-norm"],
-    ).to_client()
+    if use_dp:
+        # Return Client instance with DP
+        return FlowerClientDP(
+            model,
+            trainloader,
+            valloader,
+            local_epochs,
+            context.run_config["target-delta"],
+            noise_multiplier,
+            context.run_config["max-grad-norm"],
+            partition_id,
+        ).to_client()
+    else:
+        # Return Client instance without DP
+        return FlowerClientNoDP(
+            model, trainloader, valloader, local_epochs, partition_id
+        ).to_client()
 
 
 # Flower ClientApp
