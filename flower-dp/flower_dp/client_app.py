@@ -59,8 +59,7 @@ class FlowerClientDP(NumPyClient):
             self.device,
         )
 
-        global_run.log({str(self.client_id): {"train_loss": loss}})
-        global_run.log({"full_epsilon": epsilon})
+        global_run.log({str(self.client_id): {"epsilon": epsilon, "train_loss": loss}})
         return (
             get_weights(model),
             len(self.trainloader.dataset),
@@ -125,7 +124,11 @@ def client_fn(context: Context):
     model = Net()
     partition_id = context.node_config["partition-id"]
 
-    noise_multiplier = 1.0 if partition_id % 2 == 0 else 1.5
+    noise_multiplier = (
+        context.run_config["noise-multiplier"]
+        if partition_id % 2 == 0
+        else 1.5 * context.run_config["noise-multiplier"]
+    )
 
     num_partitions = context.node_config["num-partitions"]
     trainloader, valloader = load_data(partition_id, num_partitions)
